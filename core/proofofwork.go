@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"time"
 )
 
 var (
@@ -23,34 +24,46 @@ type ProofOfWork struct {
 
 func NewProofOfWork(block *Block) *ProofOfWork {
 	target := big.NewInt(1)
-	target.Lsh(target, uint(256-targetBits))
 
-	return &ProofOfWork{
-		block:  block,
-		target: target,
-	}
+	target = target.Lsh(target, 256-targetBits)
+
+	return &ProofOfWork{block, target}
 }
 
-func (w ProofOfWork) Run() (int, []byte) {
-	var hashInt big.Int
-	var hash [32]byte
+func (proofOfWork *ProofOfWork) Run(num int64) ([]byte, int64) {
+	//初始化随机数nonce为0
 	nonce := 0
+	//存储新生成的hash值
+	var hashInt big.Int
+	//存储hash值
+	var hash [32]byte
 
-	fmt.Printf("Calculating the block contains [%s]\n ", w.block.Data)
-	for nonce < maxNonce {
-		data := w.prepareData(nonce)
-		hash = sha256.Sum256(data)
-		fmt.Printf("\r%x", hash)
+	for {
+		//1. 将Block的属性拼接成字节数组，注意，参数为Nonce
+		databytes := proofOfWork.prepareData(nonce)
+		//2.将拼接后的字节数组生成Hash
+		hash = sha256.Sum256(databytes)
+		//3. 将hash存储至hashInt
 		hashInt.SetBytes(hash[:])
-
-		if hashInt.Cmp(w.target) == -1 {
+		//4.判断hashInt是否小于Block里面的Target
+		// Cmp compares x and y and returns:
+		//
+		//   -1 if x <  y
+		//    0 if x == y
+		//   +1 if x >  y
+		//此处需要满足hashInt(y)小于设置的target(x)即 x > y,则挖矿成功
+		if proofOfWork.target.Cmp(&hashInt) == 1 {
+			fmt.Printf("第%d个区块，挖矿成功:%x\n", num, hash)
+			fmt.Println(time.Now())
+			time.Sleep(time.Second * 2)
+			//挖矿成功，退出循环
 			break
-		} else {
-			nonce++
 		}
+		nonce++
 	}
-	fmt.Println()
-	return nonce, hash[:]
+
+	return hash[:], int64(nonce)
+
 }
 
 func (w ProofOfWork) prepareData(nonce int) []byte {
@@ -65,11 +78,13 @@ func (w ProofOfWork) prepareData(nonce int) []byte {
 		[]byte{})
 }
 
-func (w ProofOfWork) Validate() bool {
+func (w ProofOfWork) IsValid() bool {
 	var hashInt big.Int
-	data := w.prepareData(w.block.Nonce)
-	hash := sha256.Sum256(data)
-	hashInt.SetBytes(hash[:])
 
-	return hashInt.Cmp(w.target) == -1
+	hashInt.SetBytes(w.block.Hash)
+
+	if w.target.Cmp(&hashInt) == 1 {
+		return true
+	}
+	return false
 }
